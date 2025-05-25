@@ -7,21 +7,23 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 model User {
-  id        String   @id @default(uuid())
+  id        String   @id @default(cuid())
   username  String   @unique
   password  String
   profilePic String?
   status    String?
-  messagesSent Message[] @relation("Sender")
-  messagesReceived Message[] @relation("Receiver")
+  isAdmin   Boolean  @default(true)
+  sentMessages Message[] @relation("sender")
+  receivedMessages Message[] @relation("receiver")
 }
 
 model Message {
-  id        String   @id @default(uuid())
+  id        Int      @id @default(autoincrement())
   senderId  String
   receiverId String
   text      String
   createdAt DateTime @default(now())
-  sender    User     @relation("Sender", fields: [senderId], references: [id])
-  receiver  User     @relation("Receiver", fields: [receiverId], references: [id])
+  expiresAt DateTime?
+  sender    User     @relation("sender", fields: [senderId], references: [id])
+  receiver  User     @relation("receiver", fields: [receiverId], references: [id])
 }

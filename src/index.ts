@@ -8,6 +8,24 @@ import Bun from 'bun';
 
 const INDEX_PATH = './src/views/index.html';
 const prisma = new PrismaClient();
+setInterval(async () => {
+  console.log(' Cron: 60 saniyede bir eski mesajlar temizleniyor...');
+  
+  const twentySecondsAgo = new Date(Date.now() - 60 * 1000);
+  
+  try {
+    const deleted = await prisma.message.deleteMany({
+      where: {
+        createdAt: {
+          lt: twentySecondsAgo,
+        },
+      },
+    });
+    console.log(` ${deleted.count} eski mesaj silindi.`);
+  } catch (error) {
+    console.error(' Mesaj silme hatası:', error);
+  }
+}, 60 * 1000);
 
 const app = new Elysia()
   .use(cors({

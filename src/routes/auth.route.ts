@@ -3,28 +3,16 @@ import * as Auth from '../controllers/auth.controller';
 import { authMiddleware } from '../middleware/auth.middleware';
 import { PrismaClient } from '@prisma/client';
 
-/**
- * PrismaClient instance for database operations
- * @type {PrismaClient}
- */
 const prisma = new PrismaClient();
 
-/**
- * Map to store connected WebSocket clients with their usernames
- * @type {Map<string, WebSocket>}
- */
 const connectedClients = new Map<string, WebSocket>();
 
-/**
- * Interface for WebSocket client data
- */
+
 interface WebSocketData {
   username: string;
 }
 
-/**
- * Interface for message data structure
- */
+
 interface MessageData {
   type?: 'call' | 'call-response' | 'call-reject' | 'call-end' | 'message';
   from?: string;
@@ -32,13 +20,11 @@ interface MessageData {
   text?: string;
   callType?: 'voice' | 'video';
   sdp?: string;
-  candidate?: RTCIceCandidateInit; // ICE candidates for WebRTC
+  candidate?: RTCIceCandidateInit; 
   createdAt?: Date;
 }
 
-/**
- * Interface for HTTP request context
- */
+
 interface Context {
   body: any;
   cookie: { auth: { value: string; httpOnly?: boolean; secure?: boolean; sameSite?: 'strict' | 'lax' | 'none'; path?: string; maxAge?: number } };
@@ -47,17 +33,11 @@ interface Context {
   query: { [key: string]: string | undefined };
 }
 
-/**
- * Elysia router for authentication-related routes
- */
+
 export const authRouter = new Elysia({ prefix: '/auth' })
   .use(authMiddleware)
 
-  /**
-   * Register a new user
-   * @param {Context} ctx - Request context
-   * @returns {Promise<{ user: Auth.UserResponse; token: string }>}
-   */
+
   .post(
     '/register',
     async ({ body, cookie, set }: Context) => {
@@ -71,11 +51,7 @@ export const authRouter = new Elysia({ prefix: '/auth' })
     { body: t.Object({ username: t.String({ minLength: 3 }), password: t.String({ minLength: 6 }) }) }
   )
 
-  /**
-   * Log in an existing user
-   * @param {Context} ctx - Request context
-   * @returns {Promise<{ user: Auth.UserResponse; token: string }>}
-   */
+
   .post(
     '/login',
     async ({ body, cookie, set }: Context) => {
@@ -88,11 +64,6 @@ export const authRouter = new Elysia({ prefix: '/auth' })
     { body: t.Object({ username: t.String({ minLength: 3 }), password: t.String({ minLength: 6 }) }) }
   )
 
-  /**
-   * Get current user details
-   * @param {Context} ctx - Request context
-   * @returns {Auth.UserResponse | { error: string }}
-   */
   .get('/me', ({ user, set }: Context) => {
     if (!user) {
       set.status = 401;
@@ -102,22 +73,14 @@ export const authRouter = new Elysia({ prefix: '/auth' })
     return user;
   })
 
-  /**
-   * Log out the current user
-   * @param {Context} ctx - Request context
-   * @returns {{ ok: boolean }}
-   */
+
   .get('/logout', ({ cookie, set }: Context) => {
     cookie.auth = { value: '', maxAge: 0 };
     set.status = 200;
     return { ok: true };
   })
 
-  /**
-   * Get list of users (excluding current user)
-   * @param {Context} ctx - Request context
-   * @returns {Promise<{ users: Auth.UserResponse[]; total: number }>}
-   */
+
   .get(
     '/users',
     async ({ query, user, set }: Context) => {
@@ -134,11 +97,7 @@ export const authRouter = new Elysia({ prefix: '/auth' })
     { query: t.Object({ page: t.Optional(t.String()), limit: t.Optional(t.String()), search: t.Optional(t.String()) }) }
   )
 
-  /**
-   * Get messages between current user and specified user
-   * @param {Context} ctx - Request context
-   * @returns {Promise<{ messages: { id: string; from: string; to: string; text: string; createdAt: Date }[] }>}
-   */
+ 
   .get(
     '/messages',
     async ({ query, user, set }: Context) => {
@@ -166,11 +125,6 @@ export const authRouter = new Elysia({ prefix: '/auth' })
     { query: t.Object({ to: t.String() }) }
   )
 
-  /**
-   * Send a message to another user
-   * @param {Context} ctx - Request context
-   * @returns {Promise<{ success: boolean; message: MessageData }>}
-   */
   .post(
     '/message',
     async ({ body, user, set }: Context) => {
@@ -206,11 +160,7 @@ export const authRouter = new Elysia({ prefix: '/auth' })
     { body: t.Object({ to: t.String(), text: t.String() }) }
   )
 
-  /**
-   * Initiate a voice call
-   * @param {Context} ctx - Request context
-   * @returns {Promise<{ success: boolean }>}
-   */
+ 
   .post(
     '/call/voice',
     async ({ body, user, set }: Context) => {
@@ -231,11 +181,7 @@ export const authRouter = new Elysia({ prefix: '/auth' })
     { body: t.Object({ targetUser: t.String(), sdp: t.String() }) }
   )
 
-  /**
-   * Initiate a video call
-   * @param {Context} ctx - Request context
-   * @returns {Promise<{ success: boolean }>}
-   */
+
   .post(
     '/call/video',
     async ({ body, user, set }: Context) => {
@@ -256,15 +202,13 @@ export const authRouter = new Elysia({ prefix: '/auth' })
     { body: t.Object({ targetUser: t.String(), sdp: t.String() }) }
   )
 
-  /**
-   * WebSocket endpoint for real-time communication
-   */
+
   .ws('/ws', {
-    // Validate query parameters
+   
     query: t.Object({
       token: t.String(),
     }),
-    // Validate incoming message body
+   
     body: t.Object({
       type: t.Optional(t.Union([t.Literal('call'), t.Literal('call-response'), t.Literal('call-reject'), t.Literal('call-end'), t.Literal('message')])),
       from: t.Optional(t.String()),
@@ -279,10 +223,7 @@ export const authRouter = new Elysia({ prefix: '/auth' })
       })),
       createdAt: t.Optional(t.Date()),
     }),
-    /**
-     * Handle WebSocket connection open event
-     * @param {any} ws - WebSocket instance
-     */
+   
     open(ws:any) {
       const { token } = ws.data.query;
       if (!token) {
@@ -291,20 +232,16 @@ export const authRouter = new Elysia({ prefix: '/auth' })
       }
       Auth.me(token).then(user => {
         if (user) {
-          // Set ws.data with only the username
+        
           ws.data = { username: user.username } as WebSocketData;
-          connectedClients.set(user.username, ws.raw); // Use ws.raw for WebSocket compatibility
+          connectedClients.set(user.username, ws.raw); 
           console.log(`Kullanıcı bağlandı: ${user.username}, Toplam istemci: ${connectedClients.size}`);
         } else {
           ws.close(1008, 'Geçersiz token');
         }
       }).catch(() => ws.close(1008, 'Token doğrulama hatası'));
     },
-    /**
-     * Handle incoming WebSocket messages
-     * @param {any} ws - WebSocket instance
-     * @param {MessageData} message - Incoming message
-     */
+  
     message(ws:any, message:any) {
       const wsData = ws.data as WebSocketData | undefined;
       if (!wsData?.username) {
@@ -312,7 +249,7 @@ export const authRouter = new Elysia({ prefix: '/auth' })
         return;
       }
 
-      // Message is already validated by the schema, use it directly
+      
       const data = message as MessageData;
 
       if (data.type === 'call' && data.to && data.callType && data.sdp) {
