@@ -1,0 +1,635 @@
+<!DOCTYPE html>
+<html lang="tr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#00a884" />
+    <meta name="description" content="Mobil Sohbet Uygulaması" />
+    <title>Sohbet Uygulaması</title>
+    <style>
+      * { box-sizing: border-box; }
+      body {
+        font-family: 'Segoe UI', Arial, sans-serif;
+        margin: 0; padding: 0; background: #f4f7fa; overflow-x: hidden; color: #333;
+      }
+      #authModal, #callModal {
+        position: fixed; top: 0; left: 0; width: 100%; height: 100vh;
+        background: rgba(0, 0, 0, 0.6); display: flex; justify-content: center;
+        align-items: center; z-index: 9999; display: none;
+      }
+      .modal-box {
+        background: #fff; padding: 30px; border-radius: 15px;
+        width: 350px; max-width: 90%; display: flex; flex-direction: column;
+        gap: 20px; box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
+        animation: fadeIn 0.3s ease-in-out;
+      }
+      @keyframes fadeIn { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+      .modal-box h2 { margin: 0; font-size: 1.8rem; color: #1a1a1a; text-align: center; font-weight: 600; }
+      .modal-box input { padding: 12px; font-size: 1rem; border: 1px solid #ddd; border-radius: 8px; outline: none; transition: border-color 0.3s ease; }
+      .modal-box input:focus { border-color: #00a884; box-shadow: 0 0 5px rgba(0, 168, 132, 0.5); }
+      .modal-box button { padding: 12px; background: #00a884; border: none; color: white; font-weight: bold; font-size: 1rem; cursor: pointer; border-radius: 8px; transition: background 0.3s ease, transform 0.2s ease; }
+      .modal-box button:hover { background: #008f6f; transform: scale(1.05); }
+      .modal-box button:disabled { background: #ccc; cursor: not-allowed; }
+      .modal-box p { font-size: 0.9rem; text-align: center; color: #666; }
+      .modal-box span { color: #00a884; cursor: pointer; font-weight: 500; transition: color 0.3s ease; }
+      .modal-box span:hover { color: #008f6f; }
+      .alert { background: #012421; color: white; padding: 10px 15px; border-radius: 8px; border: 1px solid #f5c6cb; display: flex; align-items: center; justify-content: center; gap: 8px; font-size: 0.9rem; margin-bottom: 15px; opacity: 1; transition: opacity 0.3s ease; }
+      .alert.hidden { opacity: 0; display: none; }
+      .alert p { margin: 0; }
+      .loading-message { text-align: center; color: #666; font-size: 0.9rem; display: none; }
+      #callModal.calling .call-info { color: #00a884; font-weight: 500; }
+      #callModal.incoming .call-info { color: #ff4444; font-weight: 500; }
+      #chatContainer { display: none; height: 100vh; flex-direction: column; position: relative; background: #f8f9fa; }
+      #sidebar { width: 0; height: 100%; position: fixed; top: 0; left: 0; background: #1a1a1a; padding-top: 60px; transition: 0.3s; overflow-y: auto; z-index: 1000; }
+      #sidebar.active { width: 250px; }
+      #sidebar ul { list-style: none; padding: 0; margin: 0; }
+      #sidebar ul li { padding: 15px; color: white; cursor: pointer; display: flex; align-items: center; gap: 10px; transition: background 0.3s ease; }
+      #sidebar ul li:hover { background: #2c2c2c; }
+      #sidebar .pagination { display: flex; justify-content: space-between; padding: 10px; color: #ccc; }
+      #sidebar .pagination button { background: #00a884; color: white; border: none; padding: 5px 10px; border-radius: 5px; cursor: pointer; transition: background 0.3s ease; }
+      #sidebar .pagination button:hover { background: #008f6f; }
+      #sidebar .pagination button:disabled { background: #666; cursor: not-allowed; }
+      #sidebar #userSearch { width: 100%; padding: 10px; margin: 10px 0; border: 1px solid #444; border-radius: 5px; background: #333; color: white; }
+      #menuBtn { position: absolute; top: 15px; left: 15px; font-size: 1.5rem; cursor: pointer; z-index: 1001; background: none; border: none; color: #00a884; transition: transform 0.2s; }
+      #menuBtn:hover { transform: scale(1.1); }
+      #userInfo { position: absolute; top: 15px; right: 15px; color: #1a1a1a; font-size: 0.9rem; background: #e9ecef; padding: 5px 10px; border-radius: 15px; box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1); transition: transform 0.2s; }
+      #userInfo:hover { transform: scale(1.05); }
+      #chatArea { flex: 1; padding: 20px; overflow-y: auto; background: #fff; margin: 60px 0 80px 0; border-top: 1px solid #ddd; border-radius: 10px 10px 0 0; }
+      .message { margin: 12px 0; padding: 12px 16px; max-width: 70%; word-wrap: break-word; transition: opacity 0.3s ease; position: relative; border-radius: 15px; box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1); }
+      .message.sent { background: #d1e7dd; margin-left: auto; border-top-right-radius: 5px; }
+      .message.received { background: #e9ecef; margin-right: auto; border-top-left-radius: 5px; }
+      .message .sender { font-size: 0.85rem; font-weight: 500; color: #555; margin-bottom: 5px; }
+      .message .timestamp { font-size: 0.75rem; color: #888; text-align: right; margin-top: 5px; }
+      #messageInput { position: fixed; bottom: 0; width: 100%; padding: 10px; display: flex; background: #fff; box-shadow: 0 -2px 5px rgba(0, 0, 0, 0.1); border-top: 1px solid #ddd; border-radius: 0 0 10px 10px; }
+      #messageInput input { flex: 1; padding: 10px; border: 1px solid #ddd; border-radius: 5px 0 0 5px; outline: none; font-size: 1rem; transition: border-color 0.3s ease; }
+      #messageInput input:focus { border-color: #00a884; }
+      #messageInput button { padding: 10px 20px; background: #00a884; border: none; color: white; cursor: pointer; border-radius: 0 5px 5px 0; font-size: 1rem; transition: background 0.3s ease, transform 0.2s ease; }
+      #messageInput button:hover { background: #008f6f; transform: scale(1.05); }
+      #actionIcons { position: fixed; bottom: 70px; right: 15px; display: flex; flex-direction: column; gap: 10px; background: #fff; padding: 5px; border-radius: 10px; box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1); }
+      .icon-btn { background: none; border: none; cursor: pointer; font-size: 1.5rem; color: #00a884; padding: 5px; border-radius: 50%; transition: transform 0.2s, color 0.3s ease; }
+      .icon-btn:hover { color: #008f6f; transform: scale(1.1); }
+      .call-info { text-align: center; font-size: 1.2rem; margin-bottom: 20px; font-weight: 500; }
+      .call-actions { display: flex; gap: 20px; justify-content: center; }
+      .call-actions button { padding: 10px 20px; font-size: 1rem; transition: background 0.3s ease, transform 0.2s ease; border-radius: 8px; }
+      .call-actions button:hover { transform: scale(1.05); }
+      #acceptCallBtn { background: #00a884; }
+      #rejectCallBtn { background: #ff4444; }
+      #endCallBtn { background: #ff4444; margin-top: 10px; transition: background 0.3s ease, transform 0.2s ease; }
+      #endCallBtn:hover { background: #cc0000; transform: scale(1.05); }
+      #localVideo, #remoteVideo {
+        width: 200px; border-radius: 10px; box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1); background: #000;
+        transition: transform 0.3s ease;
+      }
+      #localVideo:hover, #remoteVideo:hover { transform: scale(1.05); }
+      #localVideo { position: fixed; top: 70px; left: 15px; }
+      #remoteVideo { position: fixed; top: 70px; right: 15px; }
+      .call-status { position: absolute; bottom: 10px; left: 10px; color: #fff; background: rgba(0, 0, 0, 0.5); padding: 5px 10px; border-radius: 5px; font-size: 0.8rem; }
+      @media (max-width: 768px) {
+        #sidebar.active { width: 200px; }
+        #userInfo { font-size: 0.8rem; padding: 3px 8px; }
+        #messageInput input { font-size: 0.9rem; }
+        #messageInput button { font-size: 0.9rem; padding: 10px 15px; }
+        .icon-btn { font-size: 1.2rem; }
+        .modal-box { width: 300px; }
+        .call-actions button { padding: 8px 15px; }
+        #localVideo, #remoteVideo { width: 150px; }
+        #localVideo { top: 60px; left: 10px; }
+        #remoteVideo { top: 60px; right: 10px; }
+      }
+    </style>
+    <script src="https://unpkg.com/simple-peer@9.11.1/simplepeer.min.js"></script>
+  </head>
+  <body>
+    <div id="authModal">
+      <div class="modal-box">
+        <div id="alert" class="alert hidden"><p>Tüm alanları doldurun ❌</p></div>
+        <h2 id="authTitle">Giriş Yap</h2>
+        <input type="text" id="usernameInput" placeholder="Kullanıcı adı" autocomplete="username" />
+        <input type="password" id="passwordInput" placeholder="Şifre" autocomplete="current-password" />
+        <button id="authBtn">Giriş Yap</button>
+        <span id="loadingMessage" class="loading-message"></span>
+        <p id="switchAuth">Hesabınız yok mu? <span>Kayıt Ol</span></p>
+      </div>
+    </div>
+    <div id="callModal" class="modal-box">
+      <div class="call-info" id="callInfo"></div>
+      <div class="call-actions" id="callActions">
+        <button id="acceptCallBtn">Kabul Et</button>
+        <button id="rejectCallBtn">Reddet</button>
+      </div>
+      <button id="endCallBtn" style="display: none;">Aramayı Kapat</button>
+    </div>
+    <div id="chatContainer">
+      <button id="menuBtn">☰</button>
+      <div id="sidebar">
+        <input type="text" id="userSearch" placeholder="Kullanıcı ara..." />
+        <ul id="userList"></ul>
+        <div class="pagination" id="pagination">
+          <button id="prevPage">Önceki</button>
+          <span id="pageInfo"></span>
+          <button id="nextPage">Sonraki</button>
+        </div>
+      </div>
+      <div id="userInfo"></div>
+      <div id="chatArea"></div>
+      <div id="messageInput">
+        <input type="text" id="messageInputField" placeholder="Mesaj yaz..." />
+        <button id="sendMessageBtn">Gönder</button>
+      </div>
+      <div id="actionIcons">
+        <button class="icon-btn" id="voiceCallBtn">📞</button>
+        <button class="icon-btn" id="videoCallBtn">🎥</button>
+      </div>
+      <video id="localVideo" autoplay playsinline style="display:none;"></video>
+      <video id="remoteVideo" autoplay playsinline style="display:none;"></video>
+    </div>
+
+    <script>
+      (() => {
+        class AlertManager {
+          constructor(elementId) {
+            this.alertElement = document.getElementById(elementId);
+            this.timeoutId = null;
+          }
+          show(message) {
+            this.alertElement.querySelector('p').textContent = message;
+            this.alertElement.classList.remove('hidden');
+            this.timeoutId = setTimeout(() => this.hide(), 5000);
+          }
+          hide() {
+            this.alertElement.classList.add('hidden');
+            if (this.timeoutId) {
+              clearTimeout(this.timeoutId);
+              this.timeoutId = null;
+            }
+          }
+        }
+
+        const authModal = document.getElementById("authModal");
+        const callModal = document.getElementById("callModal");
+        const chatContainer = document.getElementById("chatContainer");
+        const authTitle = document.getElementById("authTitle");
+        const authBtn = document.getElementById("authBtn");
+        const usernameInput = document.getElementById("usernameInput");
+        const passwordInput = document.getElementById("passwordInput");
+        const switchAuth = document.getElementById("switchAuth");
+        const alertManager = new AlertManager("alert");
+        const loadingMessage = document.getElementById("loadingMessage");
+        const userInfo = document.getElementById("userInfo");
+        const sidebar = document.getElementById("sidebar");
+        const menuBtn = document.getElementById("menuBtn");
+        const userList = document.getElementById("userList");
+        const userSearch = document.getElementById("userSearch");
+        const prevPageBtn = document.getElementById("prevPage");
+        const nextPageBtn = document.getElementById("nextPage");
+        const pageInfo = document.getElementById("pageInfo");
+        const messageInputField = document.getElementById("messageInputField");
+        const sendMessageBtn = document.getElementById("sendMessageBtn");
+        const chatArea = document.getElementById("chatArea");
+        const voiceCallBtn = document.getElementById("voiceCallBtn");
+        const videoCallBtn = document.getElementById("videoCallBtn");
+        const callInfo = document.getElementById("callInfo");
+        const acceptCallBtn = document.getElementById("acceptCallBtn");
+        const rejectCallBtn = document.getElementById("rejectCallBtn");
+        const endCallBtn = document.getElementById("endCallBtn");
+        const localVideo = document.getElementById("localVideo");
+        const remoteVideo = document.getElementById("remoteVideo");
+        let isLogin = true;
+        let ws = null;
+        let peer = null;
+        let currentPage = 1;
+        const usersPerPage = 10;
+        let currentUser = null;
+        let currentChatUser = null;
+        let callType = null;
+        let activeCall = false;
+
+        const checkSession = async () => {
+          try {
+            const sessionData = sessionStorage.getItem("sessionData");
+            if (!sessionData) {
+              authModal.style.display = "flex";
+              return false;
+            }
+            const { token, timestamp } = JSON.parse(sessionData);
+            const oneHour = 60 * 60 * 1000;
+            const now = Date.now();
+            if (now - timestamp > oneHour) {
+              sessionStorage.removeItem("sessionData");
+              await fetch("http://localhost:4000/auth/logout", { credentials: "include" });
+              authModal.style.display = "flex";
+              return false;
+            }
+            const res = await fetch("http://localhost:4000/auth/me", {
+              credentials: "include",
+              headers: { Authorization: `Bearer ${token}` }
+            });
+            const data = await res.json();
+            if (res.ok && !data.error) {
+              currentUser = data;
+              userInfo.textContent = `Kullanıcı: ${data.username} (ID: ${data.id})`;
+              chatContainer.style.display = "flex";
+              authModal.style.display = "none";
+              initWebSocket(data.username, token);
+              loadUsers(token);
+              return true;
+            } else {
+              sessionStorage.removeItem("sessionData");
+              authModal.style.display = "flex";
+              return false;
+            }
+          } catch (err) {
+            console.error("Oturum kontrol hatası:", err);
+            sessionStorage.removeItem("sessionData");
+            authModal.style.display = "flex";
+            return false;
+          }
+        };
+
+        switchAuth.onclick = () => {
+          isLogin = !isLogin;
+          authTitle.textContent = isLogin ? "Giriş Yap" : "Kayıt Ol";
+          authBtn.textContent = isLogin ? "Giriş Yap" : "Kayıt Ol";
+          switchAuth.innerHTML = isLogin ? "Hesabınız yok mu? <span>Kayıt Ol</span>" : "Zaten hesabın var mı? <span>Giriş Yap</span>";
+        };
+
+        authBtn.onclick = async () => {
+          const username = usernameInput.value.trim();
+          const password = passwordInput.value.trim();
+          if (!username || !password) {
+            alertManager.show("Tüm alanları doldurun ❌");
+            return;
+          }
+          if (username.length > 50) {
+            alertManager.show("Kullanıcı adı 50 karakterden uzun olamaz ❌");
+            return;
+          }
+          if (password.length < 6) {
+            alertManager.show("Şifre en az 6 karakter olmalı ❌");
+            return;
+          }
+
+          authBtn.disabled = true;
+          loadingMessage.style.display = "block";
+          loadingMessage.textContent = isLogin ? "Giriş yapılıyor..." : "Kayıt olunuyor...";
+          const endpoint = isLogin ? "/auth/login" : "/auth/register";
+          try {
+            const res = await fetch(`http://localhost:4000${endpoint}`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              credentials: "include",
+              body: JSON.stringify({ username, password })
+            });
+            const data = await res.json();
+            if (!res.ok || data.error) throw new Error(data.error || "İşlem Başarısız");
+            sessionStorage.setItem("sessionData", JSON.stringify({ token: data.token, timestamp: Date.now() }));
+            await checkSession();
+          } catch (error) {
+            alertManager.show(error.message + " ❌");
+          } finally {
+            authBtn.disabled = false;
+            loadingMessage.style.display = "none";
+          }
+        };
+
+        menuBtn.onclick = () => {
+          sidebar.classList.toggle("active");
+        };
+
+        async function loadUsers(token) {
+          if (!token) {
+            userList.innerHTML = "";
+            const li = document.createElement("li");
+            li.textContent = "Giriş yapmanız gerekiyor.";
+            li.style.color = "#aaa";
+            userList.appendChild(li);
+            return;
+          }
+          try {
+            const res = await fetch(`http://localhost:4000/auth/users?page=${currentPage}&limit=${usersPerPage}&search=${encodeURIComponent(userSearch.value)}`, {
+              method: 'GET',
+              headers: { Authorization: `Bearer ${token}` },
+              credentials: 'include'
+            });
+            const data = await res.json();
+            userList.innerHTML = "";
+            if (data.error) {
+              throw new Error(data.error);
+            }
+            if (!data.users || !Array.isArray(data.users)) {
+              throw new Error("Kullanıcı verisi beklenen formatta değil.");
+            }
+            if (data.users.length === 0) {
+              const li = document.createElement("li");
+              li.textContent = "Kullanıcı bulunamadı.";
+              li.style.color = "#aaa";
+              userList.appendChild(li);
+            } else {
+              data.users.forEach(user => {
+                const li = document.createElement("li");
+                li.textContent = `${user.username} (ID: ${user.id})`;
+                li.onclick = async () => {
+                  currentChatUser = user.username;
+                  await loadMessages();
+                  sidebar.classList.remove("active");
+                };
+                userList.appendChild(li);
+              });
+            }
+            pageInfo.textContent = `Sayfa ${currentPage} / ${Math.ceil(data.total / usersPerPage)}`;
+            prevPageBtn.disabled = currentPage === 1;
+            nextPageBtn.disabled = currentPage * usersPerPage >= data.total;
+          } catch (error) {
+            console.error("Kullanıcılar yüklenirken hata:", error);
+            userList.innerHTML = "";
+            const li = document.createElement("li");
+            li.textContent = error.message || "Kullanıcılar yüklenemedi.";
+            li.style.color = "#aaa";
+            userList.appendChild(li);
+          }
+        }
+
+        prevPageBtn.onclick = () => {
+          if (currentPage > 1) {
+            currentPage--;
+            loadUsers(getTokenFromSession());
+          }
+        };
+        nextPageBtn.onclick = () => {
+          currentPage++;
+          loadUsers(getTokenFromSession());
+        };
+        userSearch.oninput = () => {
+          currentPage = 1;
+          loadUsers(getTokenFromSession());
+        };
+
+        function getTokenFromSession() {
+          const sessionData = sessionStorage.getItem("sessionData");
+          return sessionData ? JSON.parse(sessionData).token : null;
+        }
+
+        async function loadMessages() {
+          if (!currentUser || !currentChatUser) return;
+          const token = getTokenFromSession();
+          try {
+            const res = await fetch(`http://localhost:4000/auth/messages?to=${currentChatUser}`, {
+              headers: { Authorization: `Bearer ${token}` },
+              credentials: "include",
+            });
+            const data = await res.json();
+            chatArea.innerHTML = "";
+            if (data.messages) {
+              data.messages.forEach(msg => {
+                const msgDiv = document.createElement("div");
+                msgDiv.className = `message ${msg.from === currentUser.username ? "sent" : "received"}`;
+                msgDiv.innerHTML = `
+                  <div class="sender">${msg.from}</div>
+                  <div>${msg.text}</div>
+                  <div class="timestamp">${new Date(msg.createdAt).toLocaleTimeString()}</div>
+                `;
+                chatArea.appendChild(msgDiv);
+              });
+              chatArea.scrollTop = chatArea.scrollHeight;
+            }
+          } catch (error) {
+            console.error("Mesajlar yüklenirken hata:", error);
+            alertManager.show("Mesajlar yüklenemedi ❌");
+          }
+        }
+
+        function initWebSocket(username, token) {
+          ws = new WebSocket(`ws://localhost:4000/auth/ws?token=${token}`);
+          ws.onopen = () => {
+            console.log("WebSocket bağlantısı açıldı");
+          };
+          ws.onmessage = (event) => {
+            const message = JSON.parse(event.data);
+            if (message.type === 'call' && !activeCall) {
+              callType = message.callType;
+              callInfo.textContent = `${message.from} sizi ${callType === 'voice' ? 'sesli' : 'görüntülü'} arıyor...`;
+              callModal.classList.add('incoming');
+              callModal.style.display = 'flex';
+              acceptCallBtn.onclick = () => handleAcceptCall(message.from, message.sdp);
+              rejectCallBtn.onclick = () => handleRejectCall(message.from);
+              endCallBtn.style.display = 'none';
+            } else if (message.type === 'call-response') {
+              if (peer) {
+                peer.signal(JSON.parse(message.sdp));
+              }
+            } else if (message.type === 'call-reject') {
+              endCall();
+              alertManager.show(`${message.from} çağrıyı reddetti! ❌`);
+            } else if (message.type === 'call-end') {
+              endCall();
+              alertManager.show(`${message.from} aramayı sonlandırdı! ❌`);
+            } else if (message.type === 'call-error') {
+              endCall();
+              alertManager.show(message.message + " ❌");
+            } else if (message.from && message.to && message.text) {
+              if ((message.from === currentChatUser && message.to === currentUser.username) || 
+                  (message.from === currentUser.username && message.to === currentChatUser)) {
+                const msgDiv = document.createElement("div");
+                msgDiv.className = `message ${message.from === currentUser.username ? "sent" : "received"}`;
+                msgDiv.innerHTML = `
+                  <div class="sender">${message.from}</div>
+                  <div>${message.text}</div>
+                  <div class="timestamp">${new Date(message.createdAt || Date.now()).toLocaleTimeString()}</div>
+                `;
+                chatArea.appendChild(msgDiv);
+                chatArea.scrollTop = chatArea.scrollHeight;
+              }
+            }
+          };
+          ws.onerror = (error) => {
+            console.error("WebSocket hatası:", error);
+          };
+          ws.onclose = () => {
+            console.log("WebSocket bağlantısı kapandı");
+            if (currentUser) {
+              setTimeout(() => initWebSocket(currentUser.username, getTokenFromSession()), 5000);
+            }
+          };
+        }
+
+        sendMessageBtn.onclick = async () => {
+          if (!currentChatUser) {
+            alertManager.show("Lütfen bir kullanıcı seçin! ❌");
+            return;
+          }
+          const messageText = messageInputField.value.trim();
+          if (!messageText) return;
+          const token = getTokenFromSession();
+          const tempMessage = {
+            from: currentUser.username,
+            to: currentChatUser,
+            text: messageText,
+            createdAt: new Date(),
+          };
+
+          try {
+            const res = await fetch("http://localhost:4000/auth/message", {
+              method: "POST",
+              headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+              credentials: "include",
+              body: JSON.stringify({ to: currentChatUser, text: messageText }),
+            });
+            const data = await res.json();
+            if (!res.ok || data.error) throw new Error(data.error || "Mesaj gönderilemedi");
+            messageInputField.value = "";
+          } catch (error) {
+            alertManager.show(error.message + " ❌");
+          }
+        };
+
+        async function initiateCall(callType) {
+          if (!currentChatUser || activeCall) {
+            alertManager.show("Zaten bir aramada bulunuyorsunuz veya kullanıcı seçilmemiş! ❌");
+            return;
+          }
+          try {
+            const token = getTokenFromSession();
+            const stream = await navigator.mediaDevices.getUserMedia({
+              video: callType === 'video',
+              audio: true
+            }).catch(err => { throw new Error("Mikrofon/kamera erişimi reddedildi: " + err.message); });
+            localVideo.srcObject = stream;
+            localVideo.style.display = 'block';
+            const statusDiv = document.createElement("div");
+            statusDiv.className = "call-status";
+            statusDiv.textContent = "Siz";
+            localVideo.appendChild(statusDiv);
+
+            peer = new SimplePeer({ initiator: true, stream, trickle: true });
+            peer.on('signal', (data) => {
+              fetch(`http://localhost:4000/auth/call/${callType}`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+                credentials: "include",
+                body: JSON.stringify({ targetUser: currentChatUser, sdp: JSON.stringify(data) })
+              }).then(res => res.json()).then(data => {
+                if (data.error) throw new Error(data.error);
+                callInfo.textContent = `${currentChatUser}'i ${callType === 'voice' ? 'sesli' : 'görüntülü'} arıyorum...`;
+                callModal.classList.add('calling');
+                callModal.style.display = 'flex';
+                acceptCallBtn.style.display = 'none';
+                rejectCallBtn.style.display = 'none';
+                endCallBtn.style.display = 'block';
+                endCallBtn.onclick = () => endCall();
+                activeCall = true;
+              }).catch(err => {
+                endCall();
+                alertManager.show(err.message || `${callType} arama başlatılamadı! ❌`);
+              });
+            });
+
+            peer.on('stream', (remoteStream) => {
+              remoteVideo.srcObject = remoteStream;
+              remoteVideo.style.display = 'block';
+              const statusDiv = document.createElement("div");
+              statusDiv.className = "call-status";
+              statusDiv.textContent = currentChatUser;
+              remoteVideo.appendChild(statusDiv);
+            });
+
+            peer.on('connect', () => {
+              console.log("Peer bağlantısı kuruldu");
+            });
+
+            peer.on('error', (err) => {
+              console.error('Peer hatası:', err);
+              endCall();
+              alertManager.show("Arama sırasında bir hata oluştu! ❌");
+            });
+
+            peer.on('close', () => endCall());
+          } catch (error) {
+            endCall();
+            alertManager.show(error.message || `${callType} arama başlatılamadı! ❌`);
+          }
+        }
+
+        async function handleAcceptCall(caller, sdp) {
+          if (activeCall) {
+            handleRejectCall(caller);
+            return;
+          }
+          try {
+            const stream = await navigator.mediaDevices.getUserMedia({
+              video: callType === 'video',
+              audio: true
+            }).catch(err => { throw new Error("Mikrofon/kamera erişimi reddedildi: " + err.message); });
+            localVideo.srcObject = stream;
+            localVideo.style.display = 'block';
+            const statusDiv = document.createElement("div");
+            statusDiv.className = "call-status";
+            statusDiv.textContent = "Siz";
+            localVideo.appendChild(statusDiv);
+
+            peer = new SimplePeer({ initiator: false, trickle: true, stream });
+            peer.signal(JSON.parse(sdp));
+            peer.on('signal', (data) => {
+              ws.send(JSON.stringify({ type: 'call-response', to: caller, sdp: JSON.stringify(data) }));
+            });
+            peer.on('stream', (remoteStream) => {
+              remoteVideo.srcObject = remoteStream;
+              remoteVideo.style.display = 'block';
+              const statusDiv = document.createElement("div");
+              statusDiv.className = "call-status";
+              statusDiv.textContent = caller;
+              remoteVideo.appendChild(statusDiv);
+            });
+            peer.on('connect', () => {
+              callInfo.textContent = `${caller} ile ${callType === 'voice' ? 'sesli' : 'görüntülü'} konuşma başladı...`;
+              callModal.classList.remove('incoming');
+              callModal.classList.add('calling');
+              callModal.style.display = 'flex';
+              acceptCallBtn.style.display = 'none';
+              rejectCallBtn.style.display = 'none';
+              endCallBtn.style.display = 'block';
+              endCallBtn.onclick = () => endCall();
+              activeCall = true;
+            });
+            peer.on('error', (err) => {
+              console.error('Peer hatası:', err);
+              endCall();
+              alertManager.show("Arama sırasında bir hata oluştu! ❌");
+            });
+            peer.on('close', () => endCall());
+          } catch (error) {
+            handleRejectCall(caller);
+            alertManager.show("Arama kabul edilemedi! ❌");
+          }
+        }
+
+        function handleRejectCall(caller) {
+          callModal.style.display = 'none';
+          if (peer) peer.destroy();
+          ws.send(JSON.stringify({ type: 'call-reject', to: caller }));
+          activeCall = false;
+        }
+
+        function endCall() {
+          if (peer) {
+            peer.destroy();
+            peer = null;
+          }
+          if (localVideo.srcObject) localVideo.srcObject.getTracks().forEach(track => track.stop());
+          if (remoteVideo.srcObject) remoteVideo.srcObject.getTracks().forEach(track => track.stop());
+          localVideo.style.display = 'none';
+          remoteVideo.style.display = 'none';
+          callModal.style.display = 'none';
+          localVideo.innerHTML = '';
+          remoteVideo.innerHTML = '';
+          activeCall = false;
+          if (currentChatUser) ws.send(JSON.stringify({ type: 'call-end', to: currentChatUser }));
+        }
+
+        voiceCallBtn.onclick = () => initiateCall('voice');
+        videoCallBtn.onclick = () => initiateCall('video');
+
+        checkSession();
+      })();
+    </script>
+  </body>
+</html>
