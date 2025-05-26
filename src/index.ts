@@ -29,7 +29,7 @@ setInterval(async () => {
 
 const app = new Elysia()
   .use(cors({
-    origin: 'http://localhost:4000',
+    origin: 'https://chat-app-p5lx.onrender.com/',
     credentials: true,
     allowedHeaders: ['Content-Type', 'Authorization'],
     methods: ['GET', 'POST', 'OPTIONS'],
