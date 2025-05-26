@@ -6,13 +6,13 @@ import { PrismaClient } from '@prisma/client';
 import { existsSync } from 'fs';
 import Bun from 'bun';
 
-const INDEX_PATH = './src/views/index.html';
+
 const prisma = new PrismaClient();
+
+
 setInterval(async () => {
-  console.log(' Cron: 60 saniyede bir eski mesajlar temizleniyor...');
-  
+  console.log('Cron: 60 saniyede bir eski mesajlar temizleniyor...');
   const twentySecondsAgo = new Date(Date.now() - 60 * 1000);
-  
   try {
     const deleted = await prisma.message.deleteMany({
       where: {
@@ -21,15 +21,18 @@ setInterval(async () => {
         },
       },
     });
-    console.log(` ${deleted.count} eski mesaj silindi.`);
+    console.log(`${deleted.count} eski mesaj silindi.`);
   } catch (error) {
-    console.error(' Mesaj silme hatası:', error);
+    console.error('Mesaj silme hatası:', error);
   }
 }, 60 * 1000);
 
+
+const INDEX_PATH = './src/views/index.html';
+
 const app = new Elysia()
   .use(cors({
-    origin: 'https://chat-app-p5lx.onrender.com/',
+    origin: 'https://chat-app-p5lx.onrender.com', 
     credentials: true,
     allowedHeaders: ['Content-Type', 'Authorization'],
     methods: ['GET', 'POST', 'OPTIONS'],
@@ -58,7 +61,11 @@ const app = new Elysia()
   })
   .use(authRouter);
 
-app.listen(4000,);
+
+app.listen(process.env.PORT || 4000, () => {
+  console.log(`🟢 Sunucu çalışıyor: https://chat-app-p5lx.onrender.com - ${new Date().toLocaleString('tr-TR', { timeZone: 'Europe/Istanbul' })}`);
+});
+
 
 process.on('SIGTERM', async () => {
   await prisma.$disconnect();
