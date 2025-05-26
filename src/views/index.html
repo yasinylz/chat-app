@@ -9,7 +9,8 @@
 
  
     <title>Sohbet Uygulaması</title>
-    <style>
+
+    <style> 
       * {
         box-sizing: border-box;
         margin: 0;
@@ -572,493 +573,550 @@
       <video id="remoteVideo" autoplay playsinline style="display:none;"></video>
     </div>
 
-    <script>
-      (() => {
-        class AlertManager {
-          constructor(elementId) {
-            this.alertElement = document.getElementById(elementId);
-            this.timeoutId = null;
-          }
-          show(message) {
-            this.alertElement.querySelector('p').textContent = message;
-            this.alertElement.classList.remove('hidden');
-            this.timeoutId = setTimeout(() => this.hide(), 5000);
-          }
-          hide() {
-            this.alertElement.classList.add('hidden');
-            if (this.timeoutId) {
-              clearTimeout(this.timeoutId);
-              this.timeoutId = null;
-            }
-          }
+<script>
+(() => {
+
+  const BASE_URL = 'https://chat-app-p5lx.onrender.com';
+  const WS_URL = 'wss://chat-app-p5lx.onrender.com/auth/ws'; 
+  const USERS_PER_PAGE = 10;
+  const SESSION_DURATION = 60 * 60 * 1000; 
+
+ 
+  const authModal = document.getElementById("authModal");
+  const callModal = document.getElementById("callModal");
+  const chatContainer = document.getElementById("chatContainer");
+  const authTitle = document.getElementById("authTitle");
+  const authBtn = document.getElementById("authBtn");
+  const usernameInput = document.getElementById("usernameInput");
+  const passwordInput = document.getElementById("passwordInput");
+  const switchAuth = document.getElementById("switchAuth");
+  const loadingMessage = document.getElementById("loadingMessage");
+  const userInfo = document.getElementById("userInfo");
+  const sidebar = document.getElementById("sidebar");
+  const menuBtn = document.getElementById("menuBtn");
+  const userList = document.getElementById("userList");
+  const userSearch = document.getElementById("userSearch");
+  const prevPageBtn = document.getElementById("prevPage");
+  const nextPageBtn = document.getElementById("nextPage");
+  const pageInfo = document.getElementById("pageInfo");
+  const messageInputField = document.getElementById("messageInputField");
+  const sendMessageBtn = document.getElementById("sendMessageBtn");
+  const chatArea = document.getElementById("chatArea");
+  const voiceCallBtn = document.getElementById("voiceCallBtn");
+  const videoCallBtn = document.getElementById("videoCallBtn");
+  const callInfo = document.getElementById("callInfo");
+  const acceptCallBtn = document.getElementById("acceptCallBtn");
+  const rejectCallBtn = document.getElementById("rejectCallBtn");
+  const endCallBtn = document.getElementById("endCallBtn");
+  const localVideo = document.getElementById("localVideo");
+  const remoteVideo = document.getElementById("remoteVideo");
+
+ 
+  let isLogin = true;
+  let ws = null;
+  let peer = null;
+  let currentPage = 1;
+  let currentUser = null;
+  let currentChatUser = null;
+  let callType = null;
+  let activeCall = false;
+
+ 
+  class AlertManager {
+    constructor(elementId) {
+      this.alertElement = document.getElementById(elementId);
+      this.timeoutId = null;
+    }
+
+    show(message) {
+      this.alertElement.querySelector('p').textContent = message;
+      this.alertElement.classList.remove('hidden');
+      this.timeoutId = setTimeout(() => this.hide(), 5000);
+    }
+
+    hide() {
+      this.alertElement.classList.add('hidden');
+      if (this.timeoutId) {
+        clearTimeout(this.timeoutId);
+        this.timeoutId = null;
+      }
+    }
+  }
+
+  const alertManager = new AlertManager("alert");
+
+ 
+  function getTokenFromSession() {
+    const sessionData = sessionStorage.getItem("sessionData");
+    return sessionData ? JSON.parse(sessionData).token : null;
+  }
+
+
+  async function checkSession() {
+    try {
+      const sessionData = sessionStorage.getItem("sessionData");
+      if (!sessionData) {
+        authModal.style.display = "flex";
+        return false;
+      }
+
+      const { token, timestamp } = JSON.parse(sessionData);
+      const now = Date.now();
+      if (now - timestamp > SESSION_DURATION) {
+        sessionStorage.removeItem("sessionData");
+        await fetch(`${BASE_URL}/auth/logout`, { credentials: "include" });
+        authModal.style.display = "flex";
+        return false;
+      }
+
+      const res = await fetch(`${BASE_URL}/auth/me`, {
+        credentials: "include",
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const data = await res.json();
+
+      if (res.ok && !data.error) {
+        currentUser = data;
+        userInfo.textContent = `Kullanıcı: ${data.username} (ID: ${data.id})`;
+        chatContainer.style.display = "flex";
+        authModal.style.display = "none";
+        initWebSocket(data.username, token);
+        loadUsers(token);
+        return true;
+      } else {
+        sessionStorage.removeItem("sessionData");
+        authModal.style.display = "flex";
+        return false;
+      }
+    } catch (err) {
+      console.error("Oturum kontrol hatası:", err);
+      sessionStorage.removeItem("sessionData");
+      authModal.style.display = "flex";
+      return false;
+    }
+  }
+
+
+  switchAuth.onclick = () => {
+    isLogin = !isLogin;
+    authTitle.textContent = isLogin ? "Giriş Yap" : "Kayıt Ol";
+    authBtn.textContent = isLogin ? "Giriş Yap" : "Kayıt Ol";
+    switchAuth.innerHTML = isLogin
+      ? "Hesabınız yok mu? <span>Kayıt Ol</span>"
+      : "Zaten hesabın var mı? <span>Giriş Yap</span>";
+  };
+
+ 
+  authBtn.onclick = async () => {
+    const username = usernameInput.value.trim();
+    const password = passwordInput.value.trim();
+
+
+    if (!username || !password) {
+      alertManager.show("Tüm alanları doldurun ❌");
+      return;
+    }
+    if (username.length > 50) {
+      alertManager.show("Kullanıcı adı 50 karakterden uzun olamaz ❌");
+      return;
+    }
+    if (password.length < 6) {
+      alertManager.show("Şifre en az 6 karakter olmalı ❌");
+      return;
+    }
+
+    authBtn.disabled = true;
+    loadingMessage.style.display = "block";
+    loadingMessage.textContent = isLogin ? "Giriş yapılıyor..." : "Kayıt olunuyor...";
+
+    const endpoint = isLogin ? "/auth/login" : "/auth/register";
+    try {
+      const res = await fetch(`${BASE_URL}${endpoint}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ username, password })
+      });
+      const data = await res.json();
+
+      if (!res.ok || data.error) throw new Error(data.error || "İşlem Başarısız");
+      sessionStorage.setItem("sessionData", JSON.stringify({ token: data.token, timestamp: Date.now() }));
+      await checkSession();
+    } catch (error) {
+      alertManager.show(error.message + " ❌");
+    } finally {
+      authBtn.disabled = false;
+      loadingMessage.style.display = "none";
+    }
+  };
+
+
+  menuBtn.onclick = () => {
+    sidebar.classList.toggle("active");
+  };
+
+  // Kullanıcı Listesini Yükleme
+  async function loadUsers(token) {
+    if (!token) {
+      userList.innerHTML = "";
+      const li = document.createElement("li");
+      li.textContent = "Giriş yapmanız gerekiyor.";
+      li.style.color = "#aaa";
+      userList.appendChild(li);
+      return;
+    }
+
+    try {
+      const res = await fetch(
+        `${BASE_URL}/auth/users?page=${currentPage}&limit=${USERS_PER_PAGE}&search=${encodeURIComponent(userSearch.value)}`,
+        {
+          method: 'GET',
+          headers: { Authorization: `Bearer ${token}` },
+          credentials: 'include'
         }
+      );
+      const data = await res.json();
+      userList.innerHTML = "";
 
-        const authModal = document.getElementById("authModal");
-        const callModal = document.getElementById("callModal");
-        const chatContainer = document.getElementById("chatContainer");
-        const authTitle = document.getElementById("authTitle");
-        const authBtn = document.getElementById("authBtn");
-        const usernameInput = document.getElementById("usernameInput");
-        const passwordInput = document.getElementById("passwordInput");
-        const switchAuth = document.getElementById("switchAuth");
-        const alertManager = new AlertManager("alert");
-        const loadingMessage = document.getElementById("loadingMessage");
-        const userInfo = document.getElementById("userInfo");
-        const sidebar = document.getElementById("sidebar");
-        const menuBtn = document.getElementById("menuBtn");
-        const userList = document.getElementById("userList");
-        const userSearch = document.getElementById("userSearch");
-        const prevPageBtn = document.getElementById("prevPage");
-        const nextPageBtn = document.getElementById("nextPage");
-        const pageInfo = document.getElementById("pageInfo");
-        const messageInputField = document.getElementById("messageInputField");
-        const sendMessageBtn = document.getElementById("sendMessageBtn");
-        const chatArea = document.getElementById("chatArea");
-        const voiceCallBtn = document.getElementById("voiceCallBtn");
-        const videoCallBtn = document.getElementById("videoCallBtn");
-        const callInfo = document.getElementById("callInfo");
-        const acceptCallBtn = document.getElementById("acceptCallBtn");
-        const rejectCallBtn = document.getElementById("rejectCallBtn");
-        const endCallBtn = document.getElementById("endCallBtn");
-        const localVideo = document.getElementById("localVideo");
-        const remoteVideo = document.getElementById("remoteVideo");
-        let isLogin = true;
-        let ws = null;
-        let peer = null;
-        let currentPage = 1;
-        const usersPerPage = 10;
-        let currentUser = null;
-        let currentChatUser = null;
-        let callType = null;
-        let activeCall = false;
+      if (data.error) {
+        throw new Error(data.error);
+      }
+      if (!data.users || !Array.isArray(data.users)) {
+        throw new Error("Kullanıcı verisi beklenen formatta değil.");
+      }
 
-        const checkSession = async () => {
-          try {
-            const sessionData = sessionStorage.getItem("sessionData");
-            if (!sessionData) {
-              authModal.style.display = "flex";
-              return false;
-            }
-            const { token, timestamp } = JSON.parse(sessionData);
-            const oneHour = 60 * 60 * 1000;
-            const now = Date.now();
-            if (now - timestamp > oneHour) {
-              sessionStorage.removeItem("sessionData");
-              await fetch("https://chat-app-p5lx.onrender.com/auth/logout", { credentials: "include" });
-              authModal.style.display = "flex";
-              return false;
-            }
-            const res = await fetch("https://chat-app-p5lx.onrender.com/auth/me", {
-              credentials: "include",
-              headers: { Authorization: `Bearer ${token}` }
-            });
-            const data = await res.json();
-            if (res.ok && !data.error) {
-              currentUser = data;
-              userInfo.textContent = `Kullanıcı: ${data.username} (ID: ${data.id})`;
-              chatContainer.style.display = "flex";
-              authModal.style.display = "none";
-              initWebSocket(data.username, token);
-              loadUsers(token);
-              return true;
-            } else {
-              sessionStorage.removeItem("sessionData");
-              authModal.style.display = "flex";
-              return false;
-            }
-          } catch (err) {
-            console.error("Oturum kontrol hatası:", err);
-            sessionStorage.removeItem("sessionData");
-            authModal.style.display = "flex";
-            return false;
-          }
-        };
-
-        switchAuth.onclick = () => {
-          isLogin = !isLogin;
-          authTitle.textContent = isLogin ? "Giriş Yap" : "Kayıt Ol";
-          authBtn.textContent = isLogin ? "Giriş Yap" : "Kayıt Ol";
-          switchAuth.innerHTML = isLogin ? "Hesabınız yok mu? <span>Kayıt Ol</span>" : "Zaten hesabın var mı? <span>Giriş Yap</span>";
-        };
-
-        authBtn.onclick = async () => {
-          const username = usernameInput.value.trim();
-          const password = passwordInput.value.trim();
-          if (!username || !password) {
-            alertManager.show("Tüm alanları doldurun ❌");
-            return;
-          }
-          if (username.length > 50) {
-            alertManager.show("Kullanıcı adı 50 karakterden uzun olamaz ❌");
-            return;
-          }
-          if (password.length < 6) {
-            alertManager.show("Şifre en az 6 karakter olmalı ❌");
-            return;
-          }
-
-          authBtn.disabled = true;
-          loadingMessage.style.display = "block";
-          loadingMessage.textContent = isLogin ? "Giriş yapılıyor..." : "Kayıt olunuyor...";
-          const endpoint = isLogin ? "/auth/login" : "/auth/register";
-          try {
-            const res = await fetch(`https://chat-app-p5lx.onrender.com${endpoint}`, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              credentials: "include",
-              body: JSON.stringify({ username, password })
-            });
-            const data = await res.json();
-            if (!res.ok || data.error) throw new Error(data.error || "İşlem Başarısız");
-            sessionStorage.setItem("sessionData", JSON.stringify({ token: data.token, timestamp: Date.now() }));
-            await checkSession();
-          } catch (error) {
-            alertManager.show(error.message + " ❌");
-          } finally {
-            authBtn.disabled = false;
-            loadingMessage.style.display = "none";
-          }
-        };
-
-        menuBtn.onclick = () => {
-          sidebar.classList.toggle("active");
-        };
-
-        async function loadUsers(token) {
-          if (!token) {
-            userList.innerHTML = "";
-            const li = document.createElement("li");
-            li.textContent = "Giriş yapmanız gerekiyor.";
-            li.style.color = "#aaa";
-            userList.appendChild(li);
-            return;
-          }
-          try {
-            const res = await fetch(`https://chat-app-p5lx.onrender.com/auth/users?page=${currentPage}&limit=${usersPerPage}&search=${encodeURIComponent(userSearch.value)}`, {
-              method: 'GET',
-              headers: { Authorization: `Bearer ${token}` },
-              credentials: 'include'
-            });
-            const data = await res.json();
-            userList.innerHTML = "";
-            if (data.error) {
-              throw new Error(data.error);
-            }
-            if (!data.users || !Array.isArray(data.users)) {
-              throw new Error("Kullanıcı verisi beklenen formatta değil.");
-            }
-            if (data.users.length === 0) {
-              const li = document.createElement("li");
-              li.textContent = "Kullanıcı bulunamadı.";
-              li.style.color = "#aaa";
-              userList.appendChild(li);
-            } else {
-              data.users.forEach(user => {
-                const li = document.createElement("li");
-                li.textContent = `${user.username} (ID: ${user.id})`;
-                li.onclick = async () => {
-                  currentChatUser = user.username;
-                  await loadMessages();
-                  sidebar.classList.remove("active");
-                };
-                userList.appendChild(li);
-              });
-            }
-            pageInfo.textContent = `Sayfa ${currentPage} / ${Math.ceil(data.total / usersPerPage)}`;
-            prevPageBtn.disabled = currentPage === 1;
-            nextPageBtn.disabled = currentPage * usersPerPage >= data.total;
-          } catch (error) {
-            console.error("Kullanıcılar yüklenirken hata:", error);
-            userList.innerHTML = "";
-            const li = document.createElement("li");
-            li.textContent = error.message || "Kullanıcılar yüklenemedi.";
-            li.style.color = "#aaa";
-            userList.appendChild(li);
-          }
-        }
-
-        prevPageBtn.onclick = () => {
-          if (currentPage > 1) {
-            currentPage--;
-            loadUsers(getTokenFromSession());
-          }
-        };
-        nextPageBtn.onclick = () => {
-          currentPage++;
-          loadUsers(getTokenFromSession());
-        };
-        userSearch.oninput = () => {
-          currentPage = 1;
-          loadUsers(getTokenFromSession());
-        };
-
-        function getTokenFromSession() {
-          const sessionData = sessionStorage.getItem("sessionData");
-          return sessionData ? JSON.parse(sessionData).token : null;
-        }
-
-        async function loadMessages() {
-          if (!currentUser || !currentChatUser) return;
-          const token = getTokenFromSession();
-          try {
-            const res = await fetch(`https://chat-app-p5lx.onrender.com/auth/messages?to=${currentChatUser}`, {
-              headers: { Authorization: `Bearer ${token}` },
-              credentials: "include",
-            });
-            const data = await res.json();
-            chatArea.innerHTML = "";
-            if (data.messages) {
-              data.messages.forEach(msg => {
-                const msgDiv = document.createElement("div");
-                msgDiv.className = `message ${msg.from === currentUser.username ? "sent" : "received"}`;
-                msgDiv.innerHTML = `
-                  <div class="sender">${msg.from}</div>
-                  <div>${msg.text}</div>
-                  <div class="timestamp">${new Date(msg.createdAt).toLocaleTimeString()}</div>
-                `;
-                chatArea.appendChild(msgDiv);
-              });
-              chatArea.scrollTop = chatArea.scrollHeight;
-            }
-          } catch (error) {
-            console.error("Mesajlar yüklenirken hata:", error);
-            alertManager.show("Mesajlar yüklenemedi ❌");
-          }
-        }
-
-        function initWebSocket(username, token) {
-          ws = new WebSocket(`ws://https://chat-app-p5lx.onrender.com/auth/ws?token=${token}`);
-          ws.onopen = () => {
-            console.log("WebSocket bağlantısı açıldı");
+      if (data.users.length === 0) {
+        const li = document.createElement("li");
+        li.textContent = "Kullanıcı bulunamadı.";
+        li.style.color = "#aaa";
+        userList.appendChild(li);
+      } else {
+        data.users.forEach(user => {
+          const li = document.createElement("li");
+          li.textContent = `${user.username} (ID: ${user.id})`;
+          li.onclick = async () => {
+            currentChatUser = user.username;
+            await loadMessages();
+            sidebar.classList.remove("active");
           };
-          ws.onmessage = (event) => {
-            const message = JSON.parse(event.data);
-            if (message.type === 'call' && !activeCall) {
-              callType = message.callType;
-              callInfo.textContent = `${message.from} sizi ${callType === 'voice' ? 'sesli' : 'görüntülü'} arıyor...`;
-              callModal.classList.add('incoming');
-              callModal.style.display = 'flex';
-              acceptCallBtn.onclick = () => handleAcceptCall(message.from, message.sdp);
-              rejectCallBtn.onclick = () => handleRejectCall(message.from);
-              endCallBtn.style.display = 'none';
-            } else if (message.type === 'call-response') {
-              if (peer) {
-                peer.signal(JSON.parse(message.sdp));
-              }
-            } else if (message.type === 'call-reject') {
-              endCall();
-              alertManager.show(`${message.from} çağrıyı reddetti! ❌`);
-            } else if (message.type === 'call-end') {
-              endCall();
-              alertManager.show(`${message.from} aramayı sonlandırdı! ❌`);
-            } else if (message.type === 'call-error') {
-              endCall();
-              alertManager.show(message.message + " ❌");
-            } else if (message.from && message.to && message.text) {
-              if ((message.from === currentChatUser && message.to === currentUser.username) || 
-                  (message.from === currentUser.username && message.to === currentChatUser)) {
-                const msgDiv = document.createElement("div");
-                msgDiv.className = `message ${message.from === currentUser.username ? "sent" : "received"}`;
-                msgDiv.innerHTML = `
-                  <div class="sender">${message.from}</div>
-                  <div>${message.text}</div>
-                  <div class="timestamp">${new Date(message.createdAt || Date.now()).toLocaleTimeString()}</div>
-                `;
-                chatArea.appendChild(msgDiv);
-                chatArea.scrollTop = chatArea.scrollHeight;
-              }
-            }
-          };
-          ws.onerror = (error) => {
-            console.error("WebSocket hatası:", error);
-          };
-          ws.onclose = () => {
-            console.log("WebSocket bağlantısı kapandı");
-            if (currentUser) {
-              setTimeout(() => initWebSocket(currentUser.username, getTokenFromSession()), 5000);
-            }
-          };
+          userList.appendChild(li);
+        });
+      }
+
+      pageInfo.textContent = `Sayfa ${currentPage} / ${Math.ceil(data.total / USERS_PER_PAGE)}`;
+      prevPageBtn.disabled = currentPage === 1;
+      nextPageBtn.disabled = currentPage * USERS_PER_PAGE >= data.total;
+    } catch (error) {
+      console.error("Kullanıcılar yüklenirken hata:", error);
+      userList.innerHTML = "";
+      const li = document.createElement("li");
+      li.textContent = error.message || "Kullanıcılar yüklenemedi.";
+      li.style.color = "#aaa";
+      userList.appendChild(li);
+    }
+  }
+
+
+  prevPageBtn.onclick = () => {
+    if (currentPage > 1) {
+      currentPage--;
+      loadUsers(getTokenFromSession());
+    }
+  };
+
+  nextPageBtn.onclick = () => {
+    currentPage++;
+    loadUsers(getTokenFromSession());
+  };
+
+  userSearch.oninput = () => {
+    currentPage = 1;
+    loadUsers(getTokenFromSession());
+  };
+
+
+  async function loadMessages() {
+    if (!currentUser || !currentChatUser) return;
+
+    const token = getTokenFromSession();
+    try {
+      const res = await fetch(`${BASE_URL}/auth/messages?to=${currentChatUser}`, {
+        headers: { Authorization: `Bearer ${token}` },
+        credentials: "include",
+      });
+      const data = await res.json();
+      chatArea.innerHTML = "";
+
+      if (data.messages) {
+        data.messages.forEach(msg => {
+          const msgDiv = document.createElement("div");
+          msgDiv.className = `message ${msg.from === currentUser.username ? "sent" : "received"}`;
+          msgDiv.innerHTML = `
+            <div class="sender">${msg.from}</div>
+            <div>${msg.text}</div>
+            <div class="timestamp">${new Date(msg.createdAt).toLocaleTimeString()}</div>
+          `;
+          chatArea.appendChild(msgDiv);
+        });
+        chatArea.scrollTop = chatArea.scrollHeight;
+      }
+    } catch (error) {
+      console.error("Mesajlar yüklenirken hata:", error);
+      alertManager.show("Mesajlar yüklenemedi ❌");
+    }
+  }
+
+
+  function initWebSocket(username, token) {
+    ws = new WebSocket(`${WS_URL}?token=${token}`);
+
+    ws.onopen = () => {
+      console.log("WebSocket bağlantısı açıldı");
+    };
+
+    ws.onmessage = (event) => {
+      const message = JSON.parse(event.data);
+
+      if (message.type === 'call' && !activeCall) {
+        callType = message.callType;
+        callInfo.textContent = `${message.from} sizi ${callType === 'voice' ? 'sesli' : 'görüntülü'} arıyor...`;
+        callModal.classList.add('incoming');
+        callModal.style.display = 'flex';
+        acceptCallBtn.onclick = () => handleAcceptCall(message.from, message.sdp);
+        rejectCallBtn.onclick = () => handleRejectCall(message.from);
+        endCallBtn.style.display = 'none';
+      } else if (message.type === 'call-response') {
+        if (peer) {
+          peer.signal(JSON.parse(message.sdp));
         }
-
-        sendMessageBtn.onclick = async () => {
-          if (!currentChatUser) {
-            alertManager.show("Lütfen bir kullanıcı seçin! ❌");
-            return;
-          }
-          const messageText = messageInputField.value.trim();
-          if (!messageText) return;
-          const token = getTokenFromSession();
-          const tempMessage = {
-            from: currentUser.username,
-            to: currentChatUser,
-            text: messageText,
-            createdAt: new Date(),
-          };
-
-          try {
-            const res = await fetch("https://chat-app-p5lx.onrender.com/auth/message", {
-              method: "POST",
-              headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-              credentials: "include",
-              body: JSON.stringify({ to: currentChatUser, text: messageText }),
-            });
-            const data = await res.json();
-            if (!res.ok || data.error) throw new Error(data.error || "Mesaj gönderilemedi");
-            messageInputField.value = "";
-          } catch (error) {
-            alertManager.show(error.message + " ❌");
-          }
-        };
-
-        async function initiateCall(callType) {
-          if (!currentChatUser || activeCall) {
-            alertManager.show("Zaten bir aramada bulunuyorsunuz veya kullanıcı seçilmemiş! ❌");
-            return;
-          }
-          try {
-            const token = getTokenFromSession();
-            const stream = await navigator.mediaDevices.getUserMedia({
-              video: callType === 'video',
-              audio: true
-            }).catch(err => { throw new Error("Mikrofon/kamera erişimi reddedildi: " + err.message); });
-            localVideo.srcObject = stream;
-            localVideo.style.display = 'block';
-            const statusDiv = document.createElement("div");
-            statusDiv.className = "call-status";
-            statusDiv.textContent = "Siz";
-            localVideo.appendChild(statusDiv);
-
-            peer = new SimplePeer({ initiator: true, stream, trickle: true });
-            peer.on('signal', (data) => {
-              fetch(`https://chat-app-p5lx.onrender.com/auth/call/${callType}`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-                credentials: "include",
-                body: JSON.stringify({ targetUser: currentChatUser, sdp: JSON.stringify(data) })
-              }).then(res => res.json()).then(data => {
-                if (data.error) throw new Error(data.error);
-                callInfo.textContent = `${currentChatUser}'i ${callType === 'voice' ? 'sesli' : 'görüntülü'} arıyorum...`;
-                callModal.classList.add('calling');
-                callModal.style.display = 'flex';
-                acceptCallBtn.style.display = 'none';
-                rejectCallBtn.style.display = 'none';
-                endCallBtn.style.display = 'block';
-                endCallBtn.onclick = () => endCall();
-                activeCall = true;
-              }).catch(err => {
-                endCall();
-                alertManager.show(err.message || `${callType} arama başlatılamadı! ❌`);
-              });
-            });
-
-            peer.on('stream', (remoteStream) => {
-              remoteVideo.srcObject = remoteStream;
-              remoteVideo.style.display = 'block';
-              const statusDiv = document.createElement("div");
-              statusDiv.className = "call-status";
-              statusDiv.textContent = currentChatUser;
-              remoteVideo.appendChild(statusDiv);
-            });
-
-            peer.on('connect', () => {
-              console.log("Peer bağlantısı kuruldu");
-            });
-
-            peer.on('error', (err) => {
-              console.error('Peer hatası:', err);
-              endCall();
-              alertManager.show("Arama sırasında bir hata oluştu! ❌");
-            });
-
-            peer.on('close', () => endCall());
-          } catch (error) {
-            endCall();
-            alertManager.show(error.message || `${callType} arama başlatılamadı! ❌`);
-          }
+      } else if (message.type === 'call-reject') {
+        endCall();
+        alertManager.show(`${message.from} çağrıyı reddetti! ❌`);
+      } else if (message.type === 'call-end') {
+        endCall();
+        alertManager.show(`${message.from} aramayı sonlandırdı! ❌`);
+      } else if (message.type === 'call-error') {
+        endCall();
+        alertManager.show(message.message + " ❌");
+      } else if (message.from && message.to && message.text) {
+        if (
+          (message.from === currentChatUser && message.to === currentUser.username) ||
+          (message.from === currentUser.username && message.to === currentChatUser)
+        ) {
+          const msgDiv = document.createElement("div");
+          msgDiv.className = `message ${message.from === currentUser.username ? "sent" : "received"}`;
+          msgDiv.innerHTML = `
+            <div class="sender">${message.from}</div>
+            <div>${message.text}</div>
+            <div class="timestamp">${new Date(message.createdAt || Date.now()).toLocaleTimeString()}</div>
+          `;
+          chatArea.appendChild(msgDiv);
+          chatArea.scrollTop = chatArea.scrollHeight;
         }
+      }
+    };
 
-        async function handleAcceptCall(caller, sdp) {
-          if (activeCall) {
-            handleRejectCall(caller);
-            return;
-          }
-          try {
-            const stream = await navigator.mediaDevices.getUserMedia({
-              video: callType === 'video',
-              audio: true
-            }).catch(err => { throw new Error("Mikrofon/kamera erişimi reddedildi: " + err.message); });
-            localVideo.srcObject = stream;
-            localVideo.style.display = 'block';
-            const statusDiv = document.createElement("div");
-            statusDiv.className = "call-status";
-            statusDiv.textContent = "Siz";
-            localVideo.appendChild(statusDiv);
+    ws.onerror = (error) => {
+      console.error("WebSocket hatası:", error);
+    };
 
-            peer = new SimplePeer({ initiator: false, trickle: true, stream });
-            peer.signal(JSON.parse(sdp));
-            peer.on('signal', (data) => {
-              ws.send(JSON.stringify({ type: 'call-response', to: caller, sdp: JSON.stringify(data) }));
-            });
-            peer.on('stream', (remoteStream) => {
-              remoteVideo.srcObject = remoteStream;
-              remoteVideo.style.display = 'block';
-              const statusDiv = document.createElement("div");
-              statusDiv.className = "call-status";
-              statusDiv.textContent = caller;
-              remoteVideo.appendChild(statusDiv);
-            });
-            peer.on('connect', () => {
-              callInfo.textContent = `${caller} ile ${callType === 'voice' ? 'sesli' : 'görüntülü'} konuşma başladı...`;
-              callModal.classList.remove('incoming');
-              callModal.classList.add('calling');
-              callModal.style.display = 'flex';
-              acceptCallBtn.style.display = 'none';
-              rejectCallBtn.style.display = 'none';
-              endCallBtn.style.display = 'block';
-              endCallBtn.onclick = () => endCall();
-              activeCall = true;
-            });
-            peer.on('error', (err) => {
-              console.error('Peer hatası:', err);
-              endCall();
-              alertManager.show("Arama sırasında bir hata oluştu! ❌");
-            });
-            peer.on('close', () => endCall());
-          } catch (error) {
-            handleRejectCall(caller);
-            alertManager.show("Arama kabul edilemedi! ❌");
-          }
-        }
+    ws.onclose = () => {
+      console.log("WebSocket bağlantısı kapandı");
+      if (currentUser) {
+        setTimeout(() => initWebSocket(currentUser.username, getTokenFromSession()), 5000);
+      }
+    };
+  }
 
-        function handleRejectCall(caller) {
-          callModal.style.display = 'none';
-          if (peer) peer.destroy();
-          ws.send(JSON.stringify({ type: 'call-reject', to: caller }));
-          activeCall = false;
-        }
 
-        function endCall() {
-          if (peer) {
-            peer.destroy();
-            peer = null;
-          }
-          if (localVideo.srcObject) localVideo.srcObject.getTracks().forEach(track => track.stop());
-          if (remoteVideo.srcObject) remoteVideo.srcObject.getTracks().forEach(track => track.stop());
-          localVideo.style.display = 'none';
-          remoteVideo.style.display = 'none';
-          callModal.style.display = 'none';
-          localVideo.innerHTML = '';
-          remoteVideo.innerHTML = '';
-          activeCall = false;
-          if (currentChatUser) ws.send(JSON.stringify({ type: 'call-end', to: currentChatUser }));
-        }
+  sendMessageBtn.onclick = async () => {
+    if (!currentChatUser) {
+      alertManager.show("Lütfen bir kullanıcı seçin! ❌");
+      return;
+    }
 
-        voiceCallBtn.onclick = () => initiateCall('voice');
-        videoCallBtn.onclick = () => initiateCall('video');
+    const messageText = messageInputField.value.trim();
+    if (!messageText) return;
 
-        checkSession();
+    const token = getTokenFromSession();
+    try {
+      const res = await fetch(`${BASE_URL}/auth/message`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        credentials: "include",
+        body: JSON.stringify({ to: currentChatUser, text: messageText }),
+      });
+      const data = await res.json();
 
-      })();
-    </script>
+      if (!res.ok || data.error) throw new Error(data.error || "Mesaj gönderilemedi");
+      messageInputField.value = "";
+    } catch (error) {
+      alertManager.show(error.message + " ❌");
+    }
+  };
+
+ 
+  async function initiateCall(callType) {
+    if (!currentChatUser || activeCall) {
+      alertManager.show("Zaten bir aramada bulunuyorsunuz veya kullanıcı seçilmemiş! ❌");
+      return;
+    }
+
+    try {
+      const token = getTokenFromSession();
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: callType === 'video',
+        audio: true
+      }).catch(err => { throw new Error("Mikrofon/kamera erişimi reddedildi: " + err.message); });
+
+      localVideo.srcObject = stream;
+      localVideo.style.display = 'block';
+      const statusDiv = document.createElement("div");
+      statusDiv.className = "call-status";
+      statusDiv.textContent = "Siz";
+      localVideo.appendChild(statusDiv);
+
+      peer = new SimplePeer({ initiator: true, stream, trickle: true });
+      peer.on('signal', (data) => {
+        fetch(`${BASE_URL}/auth/call/${callType}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+          credentials: "include",
+          body: JSON.stringify({ targetUser: currentChatUser, sdp: JSON.stringify(data) })
+        }).then(res => res.json()).then(data => {
+          if (data.error) throw new Error(data.error);
+          callInfo.textContent = `${currentChatUser}'i ${callType === 'voice' ? 'sesli' : 'görüntülü'} arıyorum...`;
+          callModal.classList.add('calling');
+          callModal.style.display = 'flex';
+          acceptCallBtn.style.display = 'none';
+          rejectCallBtn.style.display = 'none';
+          endCallBtn.style.display = 'block';
+          endCallBtn.onclick = () => endCall();
+          activeCall = true;
+        }).catch(err => {
+          endCall();
+          alertManager.show(err.message || `${callType} arama başlatılamadı! ❌`);
+        });
+      });
+
+      peer.on('stream', (remoteStream) => {
+        remoteVideo.srcObject = remoteStream;
+        remoteVideo.style.display = 'block';
+        const statusDiv = document.createElement("div");
+        statusDiv.className = "call-status";
+        statusDiv.textContent = currentChatUser;
+        remoteVideo.appendChild(statusDiv);
+      });
+
+      peer.on('connect', () => {
+        console.log("Peer bağlantısı kuruldu");
+      });
+
+      peer.on('error', (err) => {
+        console.error('Peer hatası:', err);
+        endCall();
+        alertManager.show("Arama sırasında bir hata oluştu! ❌");
+      });
+
+      peer.on('close', () => endCall());
+    } catch (error) {
+      endCall();
+      alertManager.show(error.message || `${callType} arama başlatılamadı! ❌`);
+    }
+  }
+
+
+  async function handleAcceptCall(caller, sdp) {
+    if (activeCall) {
+      handleRejectCall(caller);
+      return;
+    }
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: callType === 'video',
+        audio: true
+      }).catch(err => { throw new Error("Mikrofon/kamera erişimi reddedildi: " + err.message); });
+
+      localVideo.srcObject = stream;
+      localVideo.style.display = 'block';
+      const statusDiv = document.createElement("div");
+      statusDiv.className = "call-status";
+      statusDiv.textContent = "Siz";
+      localVideo.appendChild(statusDiv);
+
+      peer = new SimplePeer({ initiator: false, trickle: true, stream });
+      peer.signal(JSON.parse(sdp));
+      peer.on('signal', (data) => {
+        ws.send(JSON.stringify({ type: 'call-response', to: caller, sdp: JSON.stringify(data) }));
+      });
+
+      peer.on('stream', (remoteStream) => {
+        remoteVideo.srcObject = remoteStream;
+        remoteVideo.style.display = 'block';
+        const statusDiv = document.createElement("div");
+        statusDiv.className = "call-status";
+        statusDiv.textContent = caller;
+        remoteVideo.appendChild(statusDiv);
+      });
+
+      peer.on('connect', () => {
+        callInfo.textContent = `${caller} ile ${callType === 'voice' ? 'sesli' : 'görüntülü'} konuşma başladı...`;
+        callModal.classList.remove('incoming');
+        callModal.classList.add('calling');
+        callModal.style.display = 'flex';
+        acceptCallBtn.style.display = 'none';
+        rejectCallBtn.style.display = 'none';
+        endCallBtn.style.display = 'block';
+        endCallBtn.onclick = () => endCall();
+        activeCall = true;
+      });
+
+      peer.on('error', (err) => {
+        console.error('Peer hatası:', err);
+        endCall();
+        alertManager.show("Arama sırasında bir hata oluştu! ❌");
+      });
+
+      peer.on('close', () => endCall());
+    } catch (error) {
+      handleRejectCall(caller);
+      alertManager.show("Arama kabul edilemedi! ❌");
+    }
+  }
+
+
+  function handleRejectCall(caller) {
+    callModal.style.display = 'none';
+    if (peer) peer.destroy();
+    ws.send(JSON.stringify({ type: 'call-reject', to: caller }));
+    activeCall = false;
+  }
+
+
+  function endCall() {
+    if (peer) {
+      peer.destroy();
+      peer = null;
+    }
+    if (localVideo.srcObject) localVideo.srcObject.getTracks().forEach(track => track.stop());
+    if (remoteVideo.srcObject) remoteVideo.srcObject.getTracks().forEach(track => track.stop());
+    localVideo.style.display = 'none';
+    remoteVideo.style.display = 'none';
+    callModal.style.display = 'none';
+    localVideo.innerHTML = '';
+    remoteVideo.innerHTML = '';
+    activeCall = false;
+    if (currentChatUser) ws.send(JSON.stringify({ type: 'call-end', to: currentChatUser }));
+  }
+
+
+  voiceCallBtn.onclick = () => initiateCall('voice');
+  videoCallBtn.onclick = () => initiateCall('video');
+
+ 
+  checkSession();
+})();
+</script>
   </body>
 </html>
