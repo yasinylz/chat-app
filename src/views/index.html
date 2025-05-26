@@ -644,11 +644,11 @@
             const now = Date.now();
             if (now - timestamp > oneHour) {
               sessionStorage.removeItem("sessionData");
-              await fetch("http://localhost:4000/auth/logout", { credentials: "include" });
+              await fetch("https://chat-app-p5lx.onrender.com/auth/logout", { credentials: "include" });
               authModal.style.display = "flex";
               return false;
             }
-            const res = await fetch("http://localhost:4000/auth/me", {
+            const res = await fetch("https://chat-app-p5lx.onrender.com/auth/me", {
               credentials: "include",
               headers: { Authorization: `Bearer ${token}` }
             });
@@ -702,7 +702,7 @@
           loadingMessage.textContent = isLogin ? "Giriş yapılıyor..." : "Kayıt olunuyor...";
           const endpoint = isLogin ? "/auth/login" : "/auth/register";
           try {
-            const res = await fetch(`http://localhost:4000${endpoint}`, {
+            const res = await fetch(`https://chat-app-p5lx.onrender.com${endpoint}`, {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               credentials: "include",
@@ -734,7 +734,7 @@
             return;
           }
           try {
-            const res = await fetch(`http://localhost:4000/auth/users?page=${currentPage}&limit=${usersPerPage}&search=${encodeURIComponent(userSearch.value)}`, {
+            const res = await fetch(`https://chat-app-p5lx.onrender.com/auth/users?page=${currentPage}&limit=${usersPerPage}&search=${encodeURIComponent(userSearch.value)}`, {
               method: 'GET',
               headers: { Authorization: `Bearer ${token}` },
               credentials: 'include'
@@ -801,7 +801,7 @@
           if (!currentUser || !currentChatUser) return;
           const token = getTokenFromSession();
           try {
-            const res = await fetch(`http://localhost:4000/auth/messages?to=${currentChatUser}`, {
+            const res = await fetch(`https://chat-app-p5lx.onrender.com/auth/messages?to=${currentChatUser}`, {
               headers: { Authorization: `Bearer ${token}` },
               credentials: "include",
             });
@@ -827,7 +827,7 @@
         }
 
         function initWebSocket(username, token) {
-          ws = new WebSocket(`ws://localhost:4000/auth/ws?token=${token}`);
+          ws = new WebSocket(`ws://https://chat-app-p5lx.onrender.com/auth/ws?token=${token}`);
           ws.onopen = () => {
             console.log("WebSocket bağlantısı açıldı");
           };
@@ -896,7 +896,7 @@
           };
 
           try {
-            const res = await fetch("http://localhost:4000/auth/message", {
+            const res = await fetch("https://chat-app-p5lx.onrender.com/auth/message", {
               method: "POST",
               headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
               credentials: "include",
@@ -930,7 +930,7 @@
 
             peer = new SimplePeer({ initiator: true, stream, trickle: true });
             peer.on('signal', (data) => {
-              fetch(`http://localhost:4000/auth/call/${callType}`, {
+              fetch(`https://chat-app-p5lx.onrender.com/auth/call/${callType}`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
                 credentials: "include",
