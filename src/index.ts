@@ -58,9 +58,7 @@ const app = new Elysia()
   })
   .use(authRouter);
 
-app.listen(4000, () => {
-  console.log('🟢 Sunucu çalışıyor: http://localhost:4000 - 25 Mayıs 2025, 08:46 AM +03');
-});
+app.listen(4000,);
 
 process.on('SIGTERM', async () => {
   await prisma.$disconnect();
