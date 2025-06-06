@@ -12,4 +12,4 @@ To start the development server run:
 bun run dev
 ```
 
-Open  https://chat-app-p5lx.onrender.com/ with your browser to see the result.
+Open  localhost:3000 with your browser to see the result.
